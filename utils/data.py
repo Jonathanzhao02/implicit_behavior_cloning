@@ -138,7 +138,7 @@ class MujocoTrajectoryDataset(Dataset):
                 ee_rot[self.num_points - diff:] = f_ee_rot
                 joint_angles[self.num_points - diff:] = f_joint_angles
 
-            progress = torch.clamp((step_idx + torch.arange(0, self.num_points) * self.sample_every) / demo_length, max=1)
+            progress = torch.clamp((step_idx + 1 + torch.arange(0, self.num_points) * self.sample_every) / demo_length, max=1)
 
             return img, sentence, ee_pos, ee_rot, joint_angles, progress
         
