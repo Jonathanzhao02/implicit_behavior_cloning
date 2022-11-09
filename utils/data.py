@@ -77,7 +77,7 @@ class MujocoDataset(Dataset):
 
 # Returns trajectories generated from demos
 class MujocoTrajectoryDataset(Dataset):
-    def __init__(self, data_dir, sample_every=6, num_points=10):
+    def __init__(self, data_dir, sample_every=6, num_points=10, binary=False):
         # |--data_dir
         #     |--demo0
         #         |--imgs
@@ -94,6 +94,7 @@ class MujocoTrajectoryDataset(Dataset):
         self.demo_lens = []
         self.sample_every = sample_every
         self.num_points = num_points
+        self.binary = binary
 
         for i,demo in enumerate(demos):
             with h5py.File(demo.joinpath('states.data'), 'r') as f:
@@ -138,7 +139,12 @@ class MujocoTrajectoryDataset(Dataset):
                 ee_rot[self.num_points - diff:] = f_ee_rot
                 joint_angles[self.num_points - diff:] = f_joint_angles
 
-            progress = torch.clamp((step_idx + 1 + torch.arange(0, self.num_points) * self.sample_every) / demo_length, max=1)
+            progress = step_idx + 1 + torch.arange(self.num_points) * self.sample_every
+
+            if self.binary:
+                progress = (progress >= demo_length).int()
+            else:
+                progress = torch.clamp(progress / demo_length, max=1)
 
             return img, sentence, ee_pos, ee_rot, joint_angles, progress
         
