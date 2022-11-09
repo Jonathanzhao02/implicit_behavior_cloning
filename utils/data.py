@@ -69,7 +69,7 @@ class MujocoDataset(Dataset):
             ee_pos = torch.tensor(f['pos'][step_idx][0])
             ee_rot = torch.tensor(f['rot'][step_idx][0])
             joint_angles = torch.tensor(f['q'][step_idx])
-            progress = torch.tensor(step_idx / demo_length)
+            progress = torch.tensor((step_idx + 1) / demo_length)
 
             return img, sentence, ee_pos, ee_rot, joint_angles, progress
         
