@@ -7,6 +7,7 @@ from models.loss import InfoNCELoss
 import torch.nn as nn
 import torch.optim as optim
 
+from pathlib import Path
 from tqdm.auto import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
@@ -16,12 +17,18 @@ from torch.utils.tensorboard import SummaryWriter
 # rot: [-1-1]
 
 NAME = 'train-ibc-basic'
+CKPT_PATH = 'ckpts/'
+CKPT = None
 BATCH_SIZE = 32
 N_NEG = 8
 
+EPOCHS = 300
+EVAL_EVERY = 10
+SAVE_EVERY = 10000
+
 GLOBAL_STEP = 0
 
-def train(model, epoch, optimizer, scheduler, criterion, dataloader, writer, device):
+def train(model, optimizer, scheduler, criterion, dataloader, writer, device, ckpt_path):
     global GLOBAL_STEP
     model.train()
 
@@ -51,6 +58,13 @@ def train(model, epoch, optimizer, scheduler, criterion, dataloader, writer, dev
         scheduler.step()
 
         writer.add_scalar('train-loss', loss.item(), global_step=GLOBAL_STEP)
+
+        if GLOBAL_STEP % SAVE_EVERY == 0:
+            checkpoint = {
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict()
+            }
+            torch.save(checkpoint, ckpt_path.joinpath(f'{GLOBAL_STEP}.pth'))
 
 def test(model, criterion, dataloader, writer, device):
     with torch.no_grad():
@@ -83,22 +97,40 @@ def test(model, criterion, dataloader, writer, device):
 
 if __name__ == '__main__':
     writer = SummaryWriter('runs/' + NAME)
+    ckpt_path = Path(CKPT_PATH).joinpath(NAME)
+    ckpt_path.mkdirs(exist_ok=True, parents=True)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-    model = Backbone(device=device).to(device)
+    model = Backbone()
+    if CKPT is not None:
+        model.load_state_dict(torch.load(CKPT), strict=True)
+    model = model.to(device)
 
     img_preprocess = transforms.Compose([
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    dset = MujocoDataset(
-        '/home/jjzhao/Documents/IRLab/mujoco_ur5_robotiq85/data',
+    train_dset = MujocoDataset(
+        '/home/jjzhao/Documents/IRLab/implicit_behavior_cloning/data/train',
         img_preprocess=img_preprocess,
     )
 
-    dataloader = DataLoader(dset, batch_size=BATCH_SIZE, shuffle=True, num_workers=1, collate_fn=mujoco_collate_fn)
+    train_dataloader = DataLoader(train_dset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, collate_fn=mujoco_collate_fn)
+
+    val_dset = MujocoDataset(
+        '/home/jjzhao/Documents/IRLab/implicit_behavior_cloning/data/val',
+        img_preprocess=img_preprocess,
+    )
+
+    val_dataloader = DataLoader(val_dset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, collate_fn=mujoco_collate_fn)
 
     criterion = InfoNCELoss(BATCH_SIZE, N_NEG)
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.99)
+
+    for i in range(EPOCHS):
+        train(model, optimizer, scheduler, criterion, train_dataloader, writer, device, ckpt_path)
+        
+        if i % EVAL_EVERY == 0:
+            test(model, criterion, val_dataloader, writer, device)

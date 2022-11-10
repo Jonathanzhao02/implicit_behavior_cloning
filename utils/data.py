@@ -10,7 +10,7 @@ import torch.nn.functional as F
 
 def gen_sentence(attrs, targets):
     obj1 = targets.attrs['obj1']
-    obj1 = targets.attrs['obj2']
+    obj2 = targets.attrs['obj2']
 
     color1 = attrs['color'][obj1]
     color2 = attrs['color'][obj2]
@@ -20,17 +20,7 @@ def gen_sentence(attrs, targets):
 
     action = targets.attrs['action']
 
-    raise NotImplementedError("Re-implement gen_sentence over new format!")
-
-# Negative samples, generate within reasonable range for difference, uniform sampling
-# finish language templating
-
-# Should return difference between current pos, next pos as action
-# try to code simple model, no film, resnet -> concat -> mlp
-# 192 dimension for each modality (image, language, action), concatenate, map 576 to 256 to 1, relu -> output sigmoid
-# pretrained resnet18, non frozen
-# Difference of 8 timesteps
-# convert rotations to sine/cosine, (-1) to (1), difference in angle, circumvents boundary issues w/ raw euler angles
+    return f'{action} the {sclae1} {color1} {obj1} on the {scale2} {color2} {obj2}'
 
 # Returns singular states of demos
 class MujocoDataset(Dataset):
@@ -78,8 +68,7 @@ class MujocoDataset(Dataset):
                 img = self.img_preprocess(img)
 
             # only support for one objective currently
-            # sentence = gen_sentence(f['gen_attrs'], f['objectives']['0']['targets'])
-            sentence = clip.tokenize("placeholder")[0]
+            sentence = clip.tokenize(gen_sentence(f['gen_attrs'], f['objectives']['0']['targets']))[0]
 
             future_step = min(step_idx+self.sample, demo_length - 1)
 
@@ -141,8 +130,7 @@ class MujocoTrajectoryDataset(Dataset):
             img = torchvision.io.read_image(str(self.demos[demo_idx].joinpath(f'imgs/{step_idx}.png'))).float() / 255
 
             # only support for one objective currently
-            # sentence = gen_sentence(f['gen_attrs'], f['objectives']['0']['targets'])
-            sentence = clip.tokenize("placeholder")[0]
+            sentence = clip.tokenize(gen_sentence(f['gen_attrs'], f['objectives']['0']['targets']))[0]
 
             ee_pos = torch.tensor(f['pos'][step_idx:demo_length:self.sample_every][:self.num_points][:,0])
             ee_rot = torch.tensor(f['rot'][step_idx:demo_length:self.sample_every][:self.num_points][:,0])

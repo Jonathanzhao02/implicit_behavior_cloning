@@ -19,10 +19,10 @@ class VisualEncoder(nn.Module):
         return F.relu(self.encoder(x))
 
 class TaskIdEncoder(nn.Module):
-    def __init__(self, input_size, embedding_size, device=DEVICE):
+    def __init__(self, input_size, embedding_size):
         super(TaskIdEncoder, self).__init__()
 
-        self.clip, _ = clip.load("ViT-B/32", device)
+        self.clip, _ = clip.load("ViT-B/32")
         self.encoder = nn.Linear(input_size, embedding_size)
     
     def forward(self, x):
@@ -39,11 +39,11 @@ class ActionEncoder(nn.Module):
         return F.relu(self.encoder(x))
 
 class Backbone(nn.Module):
-    def __init__(self, embedding_size=192, intermediate_size=256, img_size=224, task_size=512, action_size=10, device=DEVICE):
+    def __init__(self, embedding_size=192, intermediate_size=256, img_size=224, task_size=512, action_size=10):
         super(Backbone, self).__init__()
 
         self.visual_encoder = VisualEncoder(img_size, embedding_size)
-        self.task_id_encoder = TaskIdEncoder(task_size, embedding_size, device)
+        self.task_id_encoder = TaskIdEncoder(task_size, embedding_size)
         self.action_encoder = ActionEncoder(action_size, embedding_size)
 
         self.discriminator = nn.Sequential(
