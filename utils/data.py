@@ -22,9 +22,19 @@ def gen_sentence(attrs, targets):
 
     raise NotImplementedError("Re-implement gen_sentence over new format!")
 
-# Returns singular frames of demos
+# Negative samples, generate within reasonable range for difference, uniform sampling
+# finish language templating
+
+# Should return difference between current pos, next pos as action
+# try to code simple model, no film, resnet -> concat -> mlp
+# 192 dimension for each modality (image, language, action), concatenate, map 576 to 256 to 1, relu -> output sigmoid
+# pretrained resnet18, non frozen
+# Difference of 8 timesteps
+# convert rotations to sine/cosine, (-1) to (1), difference in angle, circumvents boundary issues w/ raw euler angles
+
+# Returns singular states of demos
 class MujocoDataset(Dataset):
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, sample=8, img_preprocess=None):
         # |--data_dir
         #     |--demo0
         #         |--imgs
@@ -39,6 +49,8 @@ class MujocoDataset(Dataset):
         demos = [x for x in self.data_dir.iterdir() if x.is_dir()]
         self.demos = []
         self.demo_lens = []
+        self.sample = sample
+        self.img_preprocess = img_preprocess
 
         for i,demo in enumerate(demos):
             with h5py.File(demo.joinpath('states.data'), 'r') as f:
@@ -62,13 +74,23 @@ class MujocoDataset(Dataset):
             
             img = torchvision.io.read_image(str(self.demos[demo_idx].joinpath(f'imgs/{step_idx}.png'))).float() / 255
 
+            if self.img_preprocess:
+                img = self.img_preprocess(img)
+
             # only support for one objective currently
             # sentence = gen_sentence(f['gen_attrs'], f['objectives']['0']['targets'])
             sentence = clip.tokenize("placeholder")[0]
 
-            ee_pos = torch.tensor(f['pos'][step_idx][0])
-            ee_rot = torch.tensor(f['rot'][step_idx][0])
-            joint_angles = torch.tensor(f['q'][step_idx])
+            future_step = min(step_idx+self.sample, demo_length - 1)
+
+            ee_pos = torch.tensor(f['pos'][step_idx][0] - f['pos'][future_step][0])
+
+            rot = torch.tensor(f['rot'][step_idx][0] - f['rot'][future_step][0])
+            ee_rot = torch.empty(rot.shape[-1] * 2)
+            ee_rot[::2] = np.cos(rot)
+            ee_rot[1::2] = np.sin(rot)
+
+            joint_angles = torch.tensor(f['q'][step_idx] - f['q'][future_step])
             progress = torch.tensor((step_idx + 1) / demo_length)
 
             return img, sentence, ee_pos, ee_rot, joint_angles, progress

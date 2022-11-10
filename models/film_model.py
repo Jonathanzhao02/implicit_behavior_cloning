@@ -208,10 +208,6 @@ class Backbone(nn.Module):
         self.task_id_encoder, _ = clip.load("ViT-B/32", self.device)
         self.task_id_embedding_narrower = nn.Linear(512, embedding_size)
 
-        self.controller_xyz = Controller(num_traces=6, num_weight_points=num_weight_points, embedding_size=embedding_size)
-        # self.controller_rpy = Controller(num_traces=6, num_weight_points=num_weight_points, embedding_size=embedding_size)
-        self.controller_grip = Controller(num_traces=2, num_weight_points=num_weight_points, embedding_size=embedding_size)
-
     def _img_pathway_(self, img, task_embed):
         # Comprehensive Visual Encoder. img_embedding is the square token list
         img_embedding = self.visual_encoder(img, task_embed).squeeze()
@@ -226,7 +222,7 @@ class Backbone(nn.Module):
         task_embedding = self.task_id_embedding_narrower(task_embedding)
         return task_embedding
 
-    def forward(self, img, sentence, phis):
+    def forward(self, img, sentence, actions):
 
         # Task Pathway
         task_embed = self._task_id_pathway_(sentence)
@@ -234,21 +230,4 @@ class Backbone(nn.Module):
         # Image Pathway
         img_embed = self._img_pathway_(img, task_embed)
 
-        # Controller
-        dmp_weights_xyz = self.controller_xyz(img_embed)
-        dmp_weights_grip = self.controller_grip(img_embed)
-
-        dmp_weights_xyz = dmp_weights_xyz.reshape(img.shape[0], 6, self.num_weight_points)
-        dmp_weights_grip = dmp_weights_grip.reshape(img.shape[0], 2, self.num_weight_points)
-
-        dmp_weights = torch.cat((dmp_weights_xyz, dmp_weights_grip), axis=1)
-        
-        centers = torch.tensor(np.linspace(0.0, 1.0, self.num_weight_points, dtype=np.float32)).to(self.device)
-        centers = centers.unsqueeze(0).unsqueeze(1).repeat(img.shape[0], self.num_traces_out, 1).reshape(img.shape[0] * self.num_traces_out, self.num_weight_points)
-        dmp_weights = dmp_weights.reshape(img.shape[0] * self.num_traces_out, self.num_weight_points)
-        phis = phis.reshape(img.shape[0] * self.num_traces_out, phis.shape[-1])
-        trajectory = Interp1d()(centers, dmp_weights, phis)
-        trajectory = trajectory.reshape(img.shape[0], self.num_traces_out, phis.shape[-1])
-        dmp_weights = dmp_weights.reshape(img.shape[0], self.num_traces_out, self.num_weight_points)
-
-        return trajectory
+        return 1
