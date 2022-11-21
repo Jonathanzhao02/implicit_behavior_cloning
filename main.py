@@ -14,6 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 # negative samples:
 # progress: [0-1]
 # pos: [-0.1-0.1]
+# gripper: [-1-1]
 # rot: [-1-1]
 
 NAME = 'train-ibc-basic'
@@ -23,7 +24,7 @@ BATCH_SIZE = 32
 N_NEG = 8
 
 EPOCHS = 300
-EVAL_EVERY = 10
+EVAL_EVERY = 1
 SAVE_EVERY = 10000
 
 GLOBAL_STEP = 0
@@ -32,23 +33,26 @@ def train(model, optimizer, scheduler, criterion, dataloader, writer, device, ck
     global GLOBAL_STEP
     model.train()
 
-    for (img, sentence, ee_pos, ee_rot, joint_angles, progress) in tqdm(dataloader):
+    for (img, sentence, ee_pos, ee_rot, joint_angles, gripper, progress) in tqdm(dataloader):
+        bsz = progress.size(0)
         img = img.to(device).repeat(1 + N_NEG, 1, 1, 1)
         sentence = sentence.to(device).repeat(1 + N_NEG, 1)
         
         ee_pos = ee_pos.to(device)
         ee_rot = ee_rot.to(device)
         joint_angles = joint_angles.to(device)
+        gripper = gripper.to(device)
         progress = progress.to(device).unsqueeze(-1)
-        action = torch.cat((ee_pos, ee_rot, progress), -1).float()
+        action = torch.cat((ee_pos, ee_rot, gripper, progress), -1).float()
 
-        c_ee_pos = (torch.rand(size=(BATCH_SIZE * N_NEG,) + ee_pos.size()[1:], device=device) - 0.5) * 0.2
-        c_ee_rot = (torch.rand(size=(BATCH_SIZE * N_NEG,) + ee_rot.size()[1:], device=device) - 0.5) * 2
-        c_progress = torch.rand(size=(BATCH_SIZE * N_NEG,) + progress.size()[1:], device=device)
-        c_action = torch.cat((c_ee_pos, c_ee_rot, c_progress), -1).float()
+        c_ee_pos = (torch.rand(size=(bsz * N_NEG,) + ee_pos.size()[1:], device=device) - 0.5) * 0.2
+        c_ee_rot = (torch.rand(size=(bsz * N_NEG,) + ee_rot.size()[1:], device=device) - 0.5) * 2
+        c_gripper = (torch.rand(size=(bsz * N_NEG,) + gripper.size()[1:], device=device) - 0.5) * 2
+        c_progress = torch.rand(size=(bsz * N_NEG,) + progress.size()[1:], device=device)
+        c_action = torch.cat((c_ee_pos, c_ee_rot, c_gripper, c_progress), -1).float()
 
         action = torch.cat((action, c_action), 0)
-        y = torch.cat((torch.ones(BATCH_SIZE), torch.zeros(BATCH_SIZE * N_NEG))).to(device)
+        y = torch.cat((torch.ones(bsz), torch.zeros(bsz * N_NEG))).to(device).unsqueeze(-1)
 
         optimizer.zero_grad()
         y_hat = model(img, sentence, action)
@@ -66,28 +70,33 @@ def train(model, optimizer, scheduler, criterion, dataloader, writer, device, ck
             }
             torch.save(checkpoint, ckpt_path.joinpath(f'{GLOBAL_STEP}.pth'))
 
+        GLOBAL_STEP += 1
+
 def test(model, criterion, dataloader, writer, device):
     with torch.no_grad():
         model.eval()
         total_loss = 0
 
-        for (img, sentence, ee_pos, ee_rot, joint_angles, progress) in tqdm(dataloader):
+        for (img, sentence, ee_pos, ee_rot, joint_angles, gripper, progress) in tqdm(dataloader):
+            bsz = progress.size(0)
             img = img.to(device).repeat(1 + N_NEG, 1, 1, 1)
             sentence = sentence.to(device).repeat(1 + N_NEG, 1)
             
             ee_pos = ee_pos.to(device)
             ee_rot = ee_rot.to(device)
             joint_angles = joint_angles.to(device)
+            gripper = gripper.to(device)
             progress = progress.to(device).unsqueeze(-1)
-            action = torch.cat((ee_pos, ee_rot, progress), -1).float()
+            action = torch.cat((ee_pos, ee_rot, gripper, progress), -1).float()
 
-            c_ee_pos = (torch.rand(size=(BATCH_SIZE * N_NEG,) + ee_pos.size()[1:], device=device) - 0.5) * 0.2
-            c_ee_rot = (torch.rand(size=(BATCH_SIZE * N_NEG,) + ee_rot.size()[1:], device=device) - 0.5) * 2
-            c_progress = torch.rand(size=(BATCH_SIZE * N_NEG,) + progress.size()[1:], device=device)
-            c_action = torch.cat((c_ee_pos, c_ee_rot, c_progress), -1).float()
+            c_ee_pos = (torch.rand(size=(bsz * N_NEG,) + ee_pos.size()[1:], device=device) - 0.5) * 0.2
+            c_ee_rot = (torch.rand(size=(bsz * N_NEG,) + ee_rot.size()[1:], device=device) - 0.5) * 2
+            c_gripper = (torch.rand(size=(bsz * N_NEG,) + gripper.size()[1:], device=device) - 0.5) * 2
+            c_progress = torch.rand(size=(bsz * N_NEG,) + progress.size()[1:], device=device)
+            c_action = torch.cat((c_ee_pos, c_ee_rot, c_gripper, c_progress), -1).float()
 
             action = torch.cat((action, c_action), 0)
-            y = torch.cat((torch.ones(BATCH_SIZE), torch.zeros(BATCH_SIZE * N_NEG))).to(device)
+            y = torch.cat((torch.ones(bsz), torch.zeros(bsz * N_NEG))).to(device).unsqueeze(-1)
 
             y_hat = model(img, sentence, action)
             loss = criterion(y_hat, y)
@@ -98,13 +107,11 @@ def test(model, criterion, dataloader, writer, device):
 if __name__ == '__main__':
     writer = SummaryWriter('runs/' + NAME)
     ckpt_path = Path(CKPT_PATH).joinpath(NAME)
-    ckpt_path.mkdirs(exist_ok=True, parents=True)
+    ckpt_path.mkdir(exist_ok=True, parents=True)
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     model = Backbone()
-    if CKPT is not None:
-        model.load_state_dict(torch.load(CKPT), strict=True)
     model = model.to(device)
 
     img_preprocess = transforms.Compose([
@@ -112,25 +119,33 @@ if __name__ == '__main__':
     ])
 
     train_dset = MujocoDataset(
-        '/home/jjzhao/Documents/IRLab/implicit_behavior_cloning/data/train',
+        '/home/localuser/Documents/jjzhao/mujoco_ur5_robotiq85/data/train',
         img_preprocess=img_preprocess,
     )
 
     train_dataloader = DataLoader(train_dset, batch_size=BATCH_SIZE, shuffle=True, num_workers=8, collate_fn=mujoco_collate_fn)
 
     val_dset = MujocoDataset(
-        '/home/jjzhao/Documents/IRLab/implicit_behavior_cloning/data/val',
+        '/home/localuser/Documents/jjzhao/mujoco_ur5_robotiq85/data/val',
         img_preprocess=img_preprocess,
     )
 
     val_dataloader = DataLoader(val_dset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, collate_fn=mujoco_collate_fn)
 
-    criterion = InfoNCELoss(BATCH_SIZE, N_NEG)
+    criterion = InfoNCELoss(N_NEG)
+    #criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.99)
 
+    if CKPT is not None:
+        model.load_state_dict(torch.load(CKPT)['model'], strict=True)
+        optimizer.load_state_dict(torch.load(CKPT)['optimizer'])
+        test(model, criterion, val_dataloader, writer, device)
+
     for i in range(EPOCHS):
+        print(f"Training epoch {i}")
         train(model, optimizer, scheduler, criterion, train_dataloader, writer, device, ckpt_path)
         
         if i % EVAL_EVERY == 0:
             test(model, criterion, val_dataloader, writer, device)
+

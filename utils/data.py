@@ -8,19 +8,19 @@ import torchvision
 import numpy as np
 import torch.nn.functional as F
 
-def gen_sentence(attrs, targets):
-    obj1 = targets.attrs['obj1']
-    obj2 = targets.attrs['obj2']
+def gen_sentence(attrs, objective):
+    obj1 = objective['targets'].attrs['obj1']
+    obj2 = objective['targets'].attrs['obj2']
 
-    color1 = attrs['color'][obj1]
-    color2 = attrs['color'][obj2]
+    color1 = attrs['color'][obj1].attrs['name']
+    color2 = attrs['color'][obj2].attrs['name']
 
-    scale1 = attrs['scale'][obj1]
-    scale2 = attrs['scale'][obj2]
+    scale1 = attrs['scale'][obj1].attrs['name']
+    scale2 = attrs['scale'][obj2].attrs['name']
 
-    action = targets.attrs['action']
+    action = objective.attrs['action']
 
-    return f'{action} the {sclae1} {color1} {obj1} on the {scale2} {color2} {obj2}'
+    return f'{action} the {scale1} {color1} {obj1} on the {scale2} {color2} {obj2}'
 
 # Returns singular states of demos
 class MujocoDataset(Dataset):
@@ -68,7 +68,7 @@ class MujocoDataset(Dataset):
                 img = self.img_preprocess(img)
 
             # only support for one objective currently
-            sentence = clip.tokenize(gen_sentence(f['gen_attrs'], f['objectives']['0']['targets']))[0]
+            sentence = clip.tokenize(gen_sentence(f['gen_attrs'], f['objectives']['0']))[0]
 
             future_step = min(step_idx+self.sample, demo_length - 1)
 
@@ -80,9 +80,12 @@ class MujocoDataset(Dataset):
             ee_rot[1::2] = np.sin(rot)
 
             joint_angles = torch.tensor(f['q'][step_idx] - f['q'][future_step])
+            gripper = torch.empty(2)
+            gripper[0] = np.sin(joint_angles[-1])
+            gripper[1] = np.cos(joint_angles[-1])
             progress = torch.tensor((step_idx + 1) / demo_length)
 
-            return img, sentence, ee_pos, ee_rot, joint_angles, progress
+            return img, sentence, ee_pos, ee_rot, joint_angles, gripper, progress
         
         raise Exception(f'Failed to open file {str(demo.joinpath("states.data"))}')
 
@@ -130,7 +133,7 @@ class MujocoTrajectoryDataset(Dataset):
             img = torchvision.io.read_image(str(self.demos[demo_idx].joinpath(f'imgs/{step_idx}.png'))).float() / 255
 
             # only support for one objective currently
-            sentence = clip.tokenize(gen_sentence(f['gen_attrs'], f['objectives']['0']['targets']))[0]
+            sentence = clip.tokenize(gen_sentence(f['gen_attrs'], f['objectives']['0']))[0]
 
             ee_pos = torch.tensor(f['pos'][step_idx:demo_length:self.sample_every][:self.num_points][:,0])
             ee_rot = torch.tensor(f['rot'][step_idx:demo_length:self.sample_every][:self.num_points][:,0])
@@ -161,13 +164,14 @@ class MujocoTrajectoryDataset(Dataset):
         raise Exception(f'Failed to open file {str(demo.joinpath("states.data"))}')
 
 def mujoco_collate_fn(batch):
-    (img, sentence, ee_pos, ee_rot, joint_angles, progress) = zip(*batch)
+    (img, sentence, ee_pos, ee_rot, joint_angles, gripper, progress) = zip(*batch)
 
     img = torch.stack(img)
     sentence = torch.stack(sentence)
     ee_pos = torch.stack(ee_pos)
     ee_rot = torch.stack(ee_rot)
     joint_angles = torch.stack(joint_angles)
+    gripper = torch.stack(gripper)
     progress = torch.stack(progress)
 
-    return img, sentence, ee_pos, ee_rot, joint_angles, progress
+    return img, sentence, ee_pos, ee_rot, joint_angles, gripper, progress

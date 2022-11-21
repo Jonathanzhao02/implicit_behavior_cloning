@@ -15,7 +15,8 @@ class VisualEncoder(nn.Module):
         self.encoder = nn.Linear(list(self.resnet.modules())[-1].out_features, embedding_size)
     
     def forward(self, x):
-        x = self.resnet(x)
+        with torch.no_grad():
+            x = self.resnet(x)
         return F.relu(self.encoder(x))
 
 class TaskIdEncoder(nn.Module):
@@ -26,7 +27,8 @@ class TaskIdEncoder(nn.Module):
         self.encoder = nn.Linear(input_size, embedding_size)
     
     def forward(self, x):
-        x = self.clip.encode_text(x).float()
+        with torch.no_grad():
+            x = self.clip.encode_text(x).float()
         return F.relu(self.encoder(x))
 
 class ActionEncoder(nn.Module):
@@ -39,7 +41,7 @@ class ActionEncoder(nn.Module):
         return F.relu(self.encoder(x))
 
 class Backbone(nn.Module):
-    def __init__(self, embedding_size=192, intermediate_size=256, img_size=224, task_size=512, action_size=10):
+    def __init__(self, embedding_size=192, intermediate_size=256, img_size=224, task_size=512, action_size=12):
         super(Backbone, self).__init__()
 
         self.visual_encoder = VisualEncoder(img_size, embedding_size)
@@ -50,7 +52,6 @@ class Backbone(nn.Module):
             nn.Linear(embedding_size * 3, intermediate_size),
             nn.ReLU(),
             nn.Linear(intermediate_size, 1),
-            nn.Sigmoid(),
         )
     
     def forward(self, img, task, action):
