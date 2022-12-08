@@ -72,17 +72,16 @@ class MujocoDataset(Dataset):
 
             future_step = min(step_idx+self.sample, demo_length - 1)
 
-            ee_pos = torch.tensor(f['pos'][step_idx][0] - f['pos'][future_step][0])
+            ee_pos = torch.tensor(f['pos'][future_step][0] - f['pos'][step_idx][0])
 
-            rot = torch.tensor(f['rot'][step_idx][0] - f['rot'][future_step][0])
+            rot = torch.tensor(f['rot'][future_step][0] - f['rot'][step_idx][0])
             ee_rot = torch.empty(rot.shape[-1] * 2)
             ee_rot[::2] = np.cos(rot)
             ee_rot[1::2] = np.sin(rot)
 
-            joint_angles = torch.tensor(f['q'][step_idx] - f['q'][future_step])
-            gripper = torch.empty(2)
-            gripper[0] = np.sin(joint_angles[-1])
-            gripper[1] = np.cos(joint_angles[-1])
+            joint_angles = torch.tensor(f['q'][future_step] - f['q'][step_idx])
+            forces = torch.tensor(f['u'][future_step])
+            gripper = forces[-1]
             progress = torch.tensor((step_idx + 1) / demo_length)
 
             return img, sentence, ee_pos, ee_rot, joint_angles, gripper, progress
