@@ -58,7 +58,7 @@ def train(model, optimizer, scheduler, criterion, dataloader, writer, device, ck
         y_hat = model(img, sentence, action)
         loss = criterion(y_hat, y)
         loss.backward()
-        #torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0e-2, norm_type=2.0)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0e-2, norm_type=2.0)
         optimizer.step()
         scheduler.step()
 
