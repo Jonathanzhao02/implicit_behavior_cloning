@@ -19,7 +19,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 NAME = 'train-ibc-basic'
 CKPT_PATH = 'ckpts/'
-CKPT = None
+CKPT = '/home/localuser/Documents/jjzhao/implicit_behavior_cloning/ckpts/train-ibc-basic0/290000.pth'
 BATCH_SIZE = 32
 N_NEG = 8
 
@@ -41,8 +41,8 @@ def train(model, optimizer, scheduler, criterion, dataloader, writer, device, ck
         ee_pos = ee_pos.to(device)
         ee_rot = ee_rot.to(device)
         joint_angles = joint_angles.to(device)
-        gripper = gripper.to(device)
-        action = torch.cat((ee_pos, ee_rot, gripper, progress), -1).float()
+        gripper = gripper.unsqueeze(-1).to(device)
+        action = torch.cat((ee_pos, ee_rot, gripper), -1).float()
 
         c_ee_pos = (torch.rand(size=(bsz * N_NEG,) + ee_pos.size()[1:], device=device) - 0.5) * 0.2
         c_ee_rot = (torch.rand(size=(bsz * N_NEG,) + ee_rot.size()[1:], device=device) - 0.5) * 2
@@ -83,8 +83,8 @@ def test(model, criterion, dataloader, writer, device):
             ee_pos = ee_pos.to(device)
             ee_rot = ee_rot.to(device)
             joint_angles = joint_angles.to(device)
-            gripper = gripper.to(device)
-            action = torch.cat((ee_pos, ee_rot, gripper, progress), -1).float()
+            gripper = gripper.unsqueeze(-1).to(device)
+            action = torch.cat((ee_pos, ee_rot, gripper), -1).float()
 
             c_ee_pos = (torch.rand(size=(bsz * N_NEG,) + ee_pos.size()[1:], device=device) - 0.5) * 0.2
             c_ee_rot = (torch.rand(size=(bsz * N_NEG,) + ee_rot.size()[1:], device=device) - 0.5) * 2

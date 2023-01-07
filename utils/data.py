@@ -90,7 +90,7 @@ class MujocoDataset(Dataset):
 
 # Returns trajectories generated from demos
 class MujocoTrajectoryDataset(Dataset):
-    def __init__(self, data_dir, sample_every=6, num_points=10, binary=False):
+    def __init__(self, data_dir, sample_every=6, num_points=10, binary=False, return_diffs=True, img_preprocess=None):
         # |--data_dir
         #     |--demo0
         #         |--imgs
@@ -106,8 +106,10 @@ class MujocoTrajectoryDataset(Dataset):
         self.demos = []
         self.demo_lens = []
         self.sample_every = sample_every
-        self.num_points = num_points
+        self.num_points = num_points + 1 if return_diffs else 0
         self.binary = binary
+        self.return_diffs = return_diffs
+        self.img_preprocess = img_preprocess
 
         for i,demo in enumerate(demos):
             with h5py.File(demo.joinpath('states.data'), 'r') as f:
@@ -131,6 +133,9 @@ class MujocoTrajectoryDataset(Dataset):
             
             img = torchvision.io.read_image(str(self.demos[demo_idx].joinpath(f'imgs/{step_idx}.png'))).float() / 255
 
+            if self.img_preprocess:
+                img = self.img_preprocess(img)
+
             # only support for one objective currently
             sentence = clip.tokenize(gen_sentence(f['gen_attrs'], f['objectives']['0']))[0]
 
@@ -138,18 +143,33 @@ class MujocoTrajectoryDataset(Dataset):
             ee_rot = torch.tensor(f['rot'][step_idx:demo_length:self.sample_every][:self.num_points][:,0])
             joint_angles = torch.tensor(f['q'][step_idx:demo_length:self.sample_every][:self.num_points])
 
+            forces = torch.tensor(f['u'][step_idx:demo_length:self.sample_every][:self.num_points])
+            gripper = forces[:,-1]
+
             diff = self.num_points - ee_pos.shape[0]
 
             if diff > 0:
                 f_ee_pos = ee_pos[-1]
                 f_ee_rot = ee_rot[-1]
                 f_joint_angles = joint_angles[-1]
+                f_gripper = gripper[-1]
                 ee_pos = F.pad(ee_pos, (0, 0, 0, diff))
                 ee_rot = F.pad(ee_rot, (0, 0, 0, diff))
                 joint_angles = F.pad(joint_angles, (0, 0, 0, diff))
+                gripper = F.pad(gripper, (0, diff))
                 ee_pos[self.num_points - diff:] = f_ee_pos
                 ee_rot[self.num_points - diff:] = f_ee_rot
                 joint_angles[self.num_points - diff:] = f_joint_angles
+                gripper[self.num_points - diff:] = f_gripper
+            
+            if self.return_diffs:
+                ee_pos = torch.diff(ee_pos, dim=0)
+                rot = torch.diff(ee_rot, dim=0)
+                ee_rot = torch.empty(self.num_points - 1, rot.shape[-1] * 2)
+                ee_rot[:,::2] = np.cos(rot)
+                ee_rot[:,1::2] = np.sin(rot)
+                joint_angles = joint_angles[:,:-1]
+                gripper = gripper[:-1]
 
             progress = step_idx + 1 + torch.arange(self.num_points) * self.sample_every
 
@@ -158,7 +178,7 @@ class MujocoTrajectoryDataset(Dataset):
             else:
                 progress = torch.clamp(progress / demo_length, max=1)
 
-            return img, sentence, ee_pos, ee_rot, joint_angles, progress
+            return img, sentence, ee_pos, ee_rot, joint_angles, gripper, progress
         
         raise Exception(f'Failed to open file {str(demo.joinpath("states.data"))}')
 
